@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import subprocess
 import ast
+import sys
 
 st.set_page_config(
     page_title="Live Dashboard GetContact", 
@@ -19,9 +20,9 @@ if st.button("Cari Info", type="primary"):
     if phone_number:
         with st.spinner("Menghubungi server GetContact... (Proses ini memakan waktu beberapa detik)"):
             try:
-                # Memanggil script asli via terminal di background
+                # Memanggil script asli via terminal di background dengan sys.executable
                 result = subprocess.run(
-                    ["python", "src/main.py", "-j", "-p", phone_number],
+                    [sys.executable, "src/main.py", "-j", "-p", phone_number],
                     capture_output=True,
                     text=True
                 )
@@ -61,7 +62,7 @@ if st.button("Cari Info", type="primary"):
                             if daftar_tags:
                                 df_tags = pd.DataFrame(daftar_tags, columns=["Tag Name"])
                                 df_tags.index = df_tags.index + 1 
-                                st.dataframe(df_tags, use_container_width=True)
+                                st.dataframe(df_tags, width='stretch')
                             else:
                                 st.write("Tidak ada tag yang ditemukan untuk nomor ini.")
 
