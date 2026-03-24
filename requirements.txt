@@ -1,4 +1,4 @@
 streamlit>=1.32.0
 truecallerpy>=1.0.0
-getcontact>=0.1.0
 phonenumbers>=8.13.0
+requests>=2.28.0
