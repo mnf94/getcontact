@@ -1,10 +1,8 @@
 import streamlit as st
 import pandas as pd
+import subprocess
+import ast
 
-# TODO: Import fungsi dari repo mnf94/getcontact milikmu di sini
-# Contoh: from getcontact_api import get_phone_info
-
-# Konfigurasi Halaman Streamlit
 st.set_page_config(
     page_title="Live Dashboard GetContact", 
     page_icon="📞", 
@@ -12,69 +10,73 @@ st.set_page_config(
 )
 
 st.title("📞 GetContact Live Dashboard")
-st.write("Cari informasi nomor telepon dan lihat tag yang tersimpan.")
-
+st.write("Cari informasi nomor telepon dan lihat tag yang tersimpan dari database.")
 st.markdown("---")
 
-# Input nomor telepon dari pengguna
 phone_number = st.text_input("Masukkan Nomor Telepon (Gunakan kode negara, misal: +6281234...)", "")
 
-# Tombol untuk memicu pencarian
 if st.button("Cari Info", type="primary"):
     if phone_number:
-        with st.spinner("Menghubungi server GetContact..."):
+        with st.spinner("Menghubungi server GetContact... (Proses ini memakan waktu beberapa detik)"):
             try:
-                # ==========================================
-                # GANTI BAGIAN INI DENGAN FUNGSI ASLI KAMU
-                # ==========================================
-                # raw_data = get_phone_info(phone_number)
-                
-                # Ini adalah data simulasi (Dummy Data)
-                mock_data = {
-                    "name": "Budi Santoso",
-                    "trust_score": 85,
-                    "tags": [
-                        "Budi Kantor", 
-                        "Budi IT", 
-                        "Pak Budi", 
-                        "Penipu Paket (Jangan Angkat)"
-                    ]
-                }
-                # ==========================================
+                # Memanggil script asli via terminal di background
+                result = subprocess.run(
+                    ["python", "src/main.py", "-j", "-p", phone_number],
+                    capture_output=True,
+                    text=True
+                )
 
-                st.success("Data berhasil ditemukan!")
+                if result.returncode == 0:
+                    output_str = result.stdout.strip()
+                    start_idx = output_str.find('{')
+                    
+                    if start_idx != -1:
+                        dict_str = output_str[start_idx:]
+                        
+                        try:
+                            # Konversi output terminal menjadi dictionary Python
+                            hasil_asli = ast.literal_eval(dict_str)
 
-                # Menampilkan Profil Utama
-                col1, col2 = st.columns(2)
-                with col1:
-                    st.subheader("👤 Profil Utama")
-                    st.info(f"**Nama:** {mock_data['name']}")
-                
-                with col2:
-                    st.subheader("🛡️ Keamanan")
-                    # Mengubah warna berdasarkan skor
-                    score = mock_data['trust_score']
-                    if score > 70:
-                        st.success(f"**Trust Score:** {score}/100")
+                            nama_asli = hasil_asli.get('name') or hasil_asli.get('displayName') or "Tidak Diketahui"
+                            daftar_tags = hasil_asli.get('tags', [])
+                            is_spam = hasil_asli.get('is_spam', False)
+
+                            st.success("Data berhasil ditemukan!")
+
+                            col1, col2 = st.columns(2)
+                            with col1:
+                                st.subheader("👤 Profil Utama")
+                                st.info(f"**Nama:** {nama_asli}")
+                            
+                            with col2:
+                                st.subheader("🛡️ Info Tambahan")
+                                if is_spam:
+                                    st.error("**Status:** Terindikasi Spam 🚨")
+                                else:
+                                    st.success("**Status:** Aman ✅")
+
+                            st.markdown("---")
+                            st.subheader("🏷️ Daftar Tag (Nama Tersimpan)")
+                            
+                            if daftar_tags:
+                                df_tags = pd.DataFrame(daftar_tags, columns=["Tag Name"])
+                                df_tags.index = df_tags.index + 1 
+                                st.dataframe(df_tags, use_container_width=True)
+                            else:
+                                st.write("Tidak ada tag yang ditemukan untuk nomor ini.")
+
+                        except Exception as parse_err:
+                            st.error("Terjadi kesalahan saat membaca format data.")
+                            st.code(output_str) 
+                            
                     else:
-                        st.error(f"**Trust Score:** {score}/100")
-
-                st.markdown("---")
-
-                # Menampilkan Daftar Tag dalam bentuk Tabel
-                st.subheader("🏷️ Daftar Tag (Nama Tersimpan)")
-                if mock_data['tags']:
-                    # Konversi list ke DataFrame agar rapi
-                    df_tags = pd.DataFrame(mock_data['tags'], columns=["Tag Name"])
-                    
-                    # Menambahkan nomor urut (index + 1)
-                    df_tags.index = df_tags.index + 1 
-                    
-                    st.dataframe(df_tags, use_container_width=True)
+                        st.warning("Data tidak ditemukan, atau format log tidak sesuai.")
+                        st.code(output_str)
                 else:
-                    st.write("Tidak ada tag yang ditemukan untuk nomor ini.")
+                    st.error("Gagal menjalankan pencarian. Cek log di bawah ini.")
+                    st.code(result.stderr)
 
             except Exception as e:
-                st.error(f"Terjadi kesalahan saat mengambil data: {e}")
+                st.error(f"Terjadi kesalahan sistem: {e}")
     else:
         st.warning("Silakan masukkan nomor telepon terlebih dahulu.")
