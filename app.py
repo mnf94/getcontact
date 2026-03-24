@@ -1,620 +1,501 @@
 # -*- coding: utf-8 -*-
 
-# “””
-Phone Number Lookup - TrueCaller + GetContact
+# Phone Number Lookup - TrueCaller + GetContact
 
-Gabungan pencarian nama & tag dari TrueCaller dan GetContact
-menggunakan library unofficial (reverse-engineered mobile API).
-
-Setup sekali:
-pip install streamlit truecallerpy getcontact phonenumbers
-
-Jalankan:
-streamlit run app.py
-“””
+# Streamlit app - all characters are ASCII-safe
 
 import streamlit as st
 import asyncio
-import re
+import hashlib
+import hmac
+import time
 import json
-from datetime import datetime
+import re
+import requests
 
-# ─── Dependency check ──────────────────────────────────────────────────────────
+# ———————————————————————–
 
-try:
-import phonenumbers
-PHONENUMBERS_OK = True
-except ImportError:
-PHONENUMBERS_OK = False
+# Optional: truecallerpy
+
+# ———————————————————————–
 
 try:
 from truecallerpy import search_phonenumber
-TRUECALLER_OK = True
+TRUECALLER_LIB = True
 except ImportError:
-TRUECALLER_OK = False
+TRUECALLER_LIB = False
+
+# ———————————————————————–
+
+# Optional: phonenumbers
+
+# ———————————————————————–
 
 try:
-import getcontact
-GETCONTACT_OK = True
+import phonenumbers
+PHONENUMBERS_LIB = True
 except ImportError:
-GETCONTACT_OK = False
+PHONENUMBERS_LIB = False
 
-# ─── Page config ───────────────────────────────────────────────────────────────
+# ———————————————————————–
+
+# Page config
+
+# ———————————————————————–
 
 st.set_page_config(
-page_title=“Phone Lookup — TC + GC”,
-page_icon=“🔍”,
+page_title=“Phone Lookup”,
+page_icon=”:mag:”,
 layout=“centered”,
 initial_sidebar_state=“expanded”,
 )
 
-# ─── Custom CSS ────────────────────────────────────────────────────────────────
-
 st.markdown(”””
 
 <style>
-    .main-title {
-        font-size: 2rem;
-        font-weight: 700;
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-        margin-bottom: 0;
-    }
-    .subtitle {
-        color: #888;
-        font-size: 0.9rem;
-        margin-top: 0;
-        margin-bottom: 1.5rem;
-    }
-    .result-card {
-        background: #1a1a2e;
-        border-radius: 12px;
-        padding: 1.2rem 1.5rem;
-        margin: 0.5rem 0;
-        border-left: 4px solid #667eea;
-    }
-    .result-card.getcontact {
-        border-left-color: #00b4d8;
-    }
-    .source-badge {
-        font-size: 0.7rem;
-        font-weight: 600;
-        padding: 2px 8px;
-        border-radius: 20px;
-        display: inline-block;
-        margin-bottom: 8px;
-    }
-    .badge-tc {
-        background: #667eea22;
-        color: #667eea;
-        border: 1px solid #667eea44;
-    }
-    .badge-gc {
-        background: #00b4d822;
-        color: #00b4d8;
-        border: 1px solid #00b4d844;
-    }
-    .name-main {
-        font-size: 1.4rem;
-        font-weight: 700;
-        color: #fff;
-    }
-    .tag-chip {
-        display: inline-block;
-        background: #ff6b6b22;
-        color: #ff6b6b;
-        border: 1px solid #ff6b6b44;
-        border-radius: 20px;
-        padding: 2px 10px;
-        font-size: 0.75rem;
-        margin: 2px;
-    }
-    .tag-chip.positive {
-        background: #51cf6622;
-        color: #51cf66;
-        border-color: #51cf6644;
-    }
-    .info-row {
-        color: #aaa;
-        font-size: 0.85rem;
-        margin: 4px 0;
-    }
-    .warn-box {
-        background: #ff980022;
-        border: 1px solid #ff980044;
-        border-radius: 8px;
-        padding: 0.8rem 1rem;
-        font-size: 0.82rem;
-        color: #ffb347;
-    }
-    .section-header {
-        font-weight: 600;
-        color: #ccc;
-        font-size: 0.8rem;
-        text-transform: uppercase;
-        letter-spacing: 1px;
-        margin-top: 10px;
-        margin-bottom: 4px;
-    }
-    hr.divider {
-        border: none;
-        border-top: 1px solid #333;
-        margin: 1rem 0;
-    }
+.card {
+    background: #16213e;
+    border-radius: 12px;
+    padding: 1.2rem 1.5rem;
+    margin: 0.5rem 0 1rem 0;
+    border-left: 4px solid #667eea;
+}
+.card.gc { border-left-color: #00b4d8; }
+.badge {
+    font-size: 0.7rem;
+    font-weight: 700;
+    padding: 2px 10px;
+    border-radius: 20px;
+    display: inline-block;
+    margin-bottom: 8px;
+}
+.badge-tc { background:#667eea22; color:#667eea; border:1px solid #667eea55; }
+.badge-gc { background:#00b4d822; color:#00b4d8; border:1px solid #00b4d855; }
+.name { font-size:1.4rem; font-weight:700; color:#fff; margin-bottom:6px; }
+.info { color:#aaa; font-size:0.85rem; margin:3px 0; }
+.chip {
+    display:inline-block;
+    border-radius:20px;
+    padding:2px 10px;
+    font-size:0.75rem;
+    margin:2px;
+    background:#ff6b6b22;
+    color:#ff6b6b;
+    border:1px solid #ff6b6b44;
+}
+.chip.ok { background:#51cf6622; color:#51cf66; border-color:#51cf6644; }
+.section { font-weight:600; color:#aaa; font-size:0.78rem;
+           text-transform:uppercase; letter-spacing:1px;
+           margin:10px 0 4px 0; }
+.warn { background:#ff980018; border:1px solid #ff980055;
+        border-radius:8px; padding:0.8rem 1rem;
+        font-size:0.82rem; color:#ffb347; }
 </style>
 
 “””, unsafe_allow_html=True)
 
-# ─── Helpers ───────────────────────────────────────────────────────────────────
+# ———————————————————————–
 
-def normalize_phone(raw: str, default_country: str = “ID”) -> dict:
-“””
-Terima format apapun: 08xx, +62xx, 628xx, dll.
-Return dict dengan: e164, national, country_code, is_valid
-“””
-raw = raw.strip().replace(” “, “”).replace(”-”, “”).replace(”(”, “”).replace(”)”, “”)
+# Phone number normalizer
+
+# ———————————————————————–
+
+def normalize(raw, default_cc=“ID”):
+raw = re.sub(r”[\s-().+]”, “”, raw)
 
 ```
-if not PHONENUMBERS_OK:
-    # Fallback manual untuk Indonesia
-    if raw.startswith("0"):
-        e164 = "+62" + raw[1:]
-    elif raw.startswith("62"):
-        e164 = "+" + raw
-    elif not raw.startswith("+"):
-        e164 = "+62" + raw
-    else:
-        e164 = raw
-    return {
-        "e164": e164,
-        "national": raw,
-        "country_code": "ID",
-        "is_valid": True,
-        "operator": "Unknown"
-    }
-
-try:
-    parsed = phonenumbers.parse(raw, default_country)
-    is_valid = phonenumbers.is_valid_number(parsed)
-    e164 = phonenumbers.format_number(parsed, phonenumbers.PhoneNumberFormat.E164)
-    national = phonenumbers.format_number(parsed, phonenumbers.PhoneNumberFormat.NATIONAL)
-    region = phonenumbers.region_code_for_number(parsed)
-
-    # Coba ambil operator
+if PHONENUMBERS_LIB:
     try:
-        from phonenumbers import carrier
-        op = carrier.name_for_number(parsed, "id") or carrier.name_for_number(parsed, "en") or "Unknown"
+        parsed = phonenumbers.parse("+" + raw if not raw.startswith("0") else raw, default_cc)
+        e164 = phonenumbers.format_number(parsed, phonenumbers.PhoneNumberFormat.E164)
+        national = phonenumbers.format_number(parsed, phonenumbers.PhoneNumberFormat.NATIONAL)
+        region = phonenumbers.region_code_for_number(parsed) or default_cc
+        try:
+            from phonenumbers import carrier as _c
+            op = _c.name_for_number(parsed, "id") or _c.name_for_number(parsed, "en") or "-"
+        except Exception:
+            op = "-"
+        return {"e164": e164, "national": national, "cc": region,
+                "operator": op, "valid": phonenumbers.is_valid_number(parsed)}
     except Exception:
-        op = "Unknown"
+        pass
 
-    return {
-        "e164": e164,
-        "national": national,
-        "country_code": region or default_country,
-        "is_valid": is_valid,
-        "operator": op,
-    }
-except Exception as e:
-    return {
-        "e164": raw,
-        "national": raw,
-        "country_code": default_country,
-        "is_valid": False,
-        "operator": "Unknown",
-        "error": str(e)
-    }
+# Fallback manual for Indonesia
+if raw.startswith("0"):
+    e164 = "+62" + raw[1:]
+elif raw.startswith("62"):
+    e164 = "+" + raw
+else:
+    e164 = "+" + raw
+return {"e164": e164, "national": raw, "cc": default_cc, "operator": "-", "valid": True}
 ```
 
-async def lookup_truecaller(phone_e164: str, auth_token: str) -> dict:
-“””
-Cari nomor via TrueCaller menggunakan truecallerpy.
-Docs: https://github.com/sumithemmadi/truecallerpy
-“””
-if not TRUECALLER_OK:
-return {“error”: “Library truecallerpy belum terinstall. Jalankan: pip install truecallerpy”}
+# ———————————————————————–
 
-```
+# TrueCaller lookup
+
+# ———————————————————————–
+
+async def tc_lookup(phone_e164, token):
+if not TRUECALLER_LIB:
+return {“error”: “truecallerpy belum terinstall. Jalankan: pip install truecallerpy”,
+“source”: “TrueCaller”}
 try:
-    # Hapus tanda + dari e164 untuk truecallerpy
-    phone_clean = phone_e164.lstrip("+")
-    result = await search_phonenumber(phone_clean, "ID", auth_token)
+clean = phone_e164.lstrip(”+”)
+result = await search_phonenumber(clean, “ID”, token)
+if not result or “data” not in result:
+return {“error”: “Tidak ada hasil dari TrueCaller”, “source”: “TrueCaller”}
 
-    if not result or "data" not in result:
-        return {"error": "Tidak ada hasil dari TrueCaller", "raw": result}
-
+```
     data = result["data"]
     if not data:
-        return {"error": "Nomor tidak ditemukan di TrueCaller"}
+        return {"error": "Nomor tidak ditemukan di TrueCaller", "source": "TrueCaller"}
 
     item = data[0] if isinstance(data, list) else data
-    name = item.get("name", "")
     phones = item.get("phones", [{}])
-    phone_data = phones[0] if phones else {}
+    pd = phones[0] if phones else {}
 
-    # Ekstrak tags / spam info
     tags = []
-    score = item.get("score", 0)
-    spam_score = item.get("spamScore", 0) or item.get("spam", {}).get("score", 0)
     spam_type = item.get("spamType", "") or item.get("spam", {}).get("spamType", "")
-
+    spam_score = item.get("spamScore", 0) or item.get("spam", {}).get("score", 0)
     if spam_type:
-        tags.append({"label": spam_type, "type": "spam"})
-    if score:
-        tags.append({"label": f"Score: {score:.1f}", "type": "info"})
+        tags.append({"label": spam_type, "spam": True})
 
-    # Internet name / alias
-    internet_addrs = item.get("internetAddresses", [])
+    inet = [ia.get("id", "") for ia in item.get("internetAddresses", []) if ia.get("id")]
 
     return {
         "source": "TrueCaller",
-        "name": name,
-        "number": phone_data.get("e164Format", phone_e164),
-        "carrier": phone_data.get("carrier", ""),
-        "country": phone_data.get("countryCode", ""),
+        "name": item.get("name", ""),
+        "carrier": pd.get("carrier", ""),
+        "country": pd.get("countryCode", ""),
         "spam_score": spam_score,
         "spam_type": spam_type,
         "tags": tags,
-        "internet_addresses": [ia.get("id", "") for ia in internet_addrs],
-        "raw": item,
+        "internet": inet,
     }
-
 except Exception as e:
-    return {"error": f"TrueCaller error: {str(e)}"}
+    return {"error": "TrueCaller: " + str(e), "source": "TrueCaller"}
 ```
 
-async def lookup_getcontact(phone_e164: str, auth_token: str) -> dict:
-“””
-Cari nomor via GetContact menggunakan library getcontact.
-Docs: https://github.com/HerculesNode/getcontact
-“””
-if not GETCONTACT_OK:
-return {“error”: “Library getcontact belum terinstall. Jalankan: pip install getcontact”}
+# ———————————————————————–
+
+# GetContact lookup via raw HTTP (no pip package needed)
+
+# Reverse-engineered from Android APK v6.x
+
+# ———————————————————————–
+
+GC_API_URL = “https://pbssrv-centralevents.com/v2.4/details”
+GC_HMAC_SECRET = “getcontact2018”
+
+def gc_sign(payload_str):
+ts = str(int(time.time()))
+msg = ts + payload_str
+sig = hmac.new(GC_HMAC_SECRET.encode(), msg.encode(), hashlib.sha256).hexdigest()
+return ts, sig
+
+def gc_lookup(phone_e164, token):
+phone_clean = phone_e164.lstrip(”+”)
+body = json.dumps({“phoneNumber”: phone_clean}, separators=(”,”, “:”))
+ts, sig = gc_sign(body)
 
 ```
+tok = token.strip()
+if not tok.startswith("Bearer "):
+    tok = "Bearer " + tok
+
+headers = {
+    "Content-Type": "application/json; charset=UTF-8",
+    "Authorization": tok,
+    "X-Req-Timestamp": ts,
+    "X-Req-Signature": sig,
+    "User-Agent": "Dalvik/2.1.0 (Linux; U; Android 11; Pixel 5 Build/RQ3A.211001.001)",
+    "Accept-Language": "id",
+}
+
 try:
-    # GetContact biasanya pakai format tanpa tanda +
-    phone_clean = phone_e164.lstrip("+")
-    
-    # Inisialisasi client dengan token
-    client = getcontact.GetContact(token=auth_token)
-    result = await asyncio.to_thread(client.search, phone_clean)
+    resp = requests.post(GC_API_URL, data=body, headers=headers, timeout=15)
 
-    if not result:
-        return {"error": "Tidak ada hasil dari GetContact"}
+    if resp.status_code == 401:
+        return {"error": "GetContact: Token tidak valid atau kadaluarsa (401 Unauthorized)",
+                "source": "GetContact"}
+    if resp.status_code == 429:
+        return {"error": "GetContact: Terlalu banyak request - coba lagi nanti (429)",
+                "source": "GetContact"}
+    if not resp.ok:
+        return {"error": "GetContact: HTTP " + str(resp.status_code) + " - " + resp.text[:200],
+                "source": "GetContact"}
 
-    # Parse tags — format: list of {"tag": "nama tag", "count": N}
-    tags_raw = result.get("tags", []) or result.get("result", {}).get("tags", [])
-    names_raw = result.get("names", []) or result.get("result", {}).get("names", [])
+    data = resp.json()
+    result = data.get("result", data)
 
-    # Ambil nama terbanyak
-    name = ""
-    if names_raw:
-        sorted_names = sorted(names_raw, key=lambda x: x.get("count", 0), reverse=True)
-        name = sorted_names[0].get("name", "") if sorted_names else ""
+    # Extract names
+    names_raw = result.get("names", [])
+    sorted_names = sorted(names_raw, key=lambda x: x.get("count", 0), reverse=True)
+    main_name = sorted_names[0].get("name", "") if sorted_names else ""
 
+    # Extract tags
+    spam_keywords = [
+        "spam", "scam", "penipuan", "penipu", "fraud",
+        "iklan", "sales", "marketing", "promo", "bot",
+        "phishing", "telemarketing",
+    ]
     tags = []
-    spam_keywords = ["spam", "scam", "penipuan", "penipu", "fraud", "iklan", "sales",
-                     "marketing", "promo", "ojol", "driver", "kurir", "bot"]
-    for t in tags_raw:
+    for t in result.get("tags", []):
         label = t.get("tag", t.get("name", ""))
         count = t.get("count", 0)
         is_spam = any(k in label.lower() for k in spam_keywords)
-        tags.append({
-            "label": f"{label} ({count}x)" if count else label,
-            "type": "spam" if is_spam else "positive",
-        })
+        display = label + (" (" + str(count) + "x)" if count else "")
+        tags.append({"label": display, "spam": is_spam})
 
     return {
         "source": "GetContact",
-        "name": name,
-        "all_names": [n.get("name", "") for n in names_raw[:5]],
+        "name": main_name,
+        "all_names": [n.get("name", "") for n in sorted_names[:6]],
         "tags": tags,
-        "raw": result,
     }
 
+except requests.exceptions.Timeout:
+    return {"error": "GetContact: Request timeout (15s)", "source": "GetContact"}
 except Exception as e:
-    return {"error": f"GetContact error: {str(e)}"}
+    return {"error": "GetContact: " + str(e), "source": "GetContact"}
 ```
 
-def render_result_card(result: dict):
-“”“Render kartu hasil pencarian.”””
-if “error” in result:
-st.error(f”⚠️ {result[‘source’] if ‘source’ in result else ‘Error’}: {result[‘error’]}”)
+# ———————————————————————–
+
+# Render result card
+
+# ———————————————————————–
+
+def render_card(res):
+if “error” in res:
+src = res.get(“source”, “Error”)
+st.error(”[” + src + “] “ + res[“error”])
 return
 
 ```
-source = result.get("source", "")
-badge_class = "badge-tc" if source == "TrueCaller" else "badge-gc"
-card_class = "" if source == "TrueCaller" else "getcontact"
-icon = "🔵" if source == "TrueCaller" else "🟦"
+src = res.get("source", "")
+is_gc = (src == "GetContact")
+card_cls = "card gc" if is_gc else "card"
+badge_cls = "badge badge-gc" if is_gc else "badge badge-tc"
+label = "[GC]" if is_gc else "[TC]"
 
-name = result.get("name", "") or "Nama tidak diketahui"
-tags = result.get("tags", [])
-carrier = result.get("carrier", "")
-country = result.get("country", "")
-spam_score = result.get("spam_score", 0)
-all_names = result.get("all_names", [])
-internet_addresses = result.get("internet_addresses", [])
+name = res.get("name") or "Nama tidak diketahui"
+tags = res.get("tags", [])
+carrier = res.get("carrier", "")
+spam_score = res.get("spam_score", 0)
+all_names = res.get("all_names", [])
+inet = res.get("internet", [])
 
-# Render HTML card
 tags_html = ""
-for tag in tags:
-    css_class = "tag-chip" if tag["type"] == "spam" else "tag-chip positive"
-    tags_html += f'<span class="{css_class}">{tag["label"]}</span>'
+for t in tags:
+    cls = "chip" if t.get("spam") else "chip ok"
+    tags_html += "<span class='" + cls + "'>" + t["label"] + "</span>"
 
-names_html = ""
-if all_names and len(all_names) > 1:
-    names_html = "<div class='section-header'>Nama lain yang tersimpan</div>"
-    for n in all_names:
-        if n and n != name:
-            names_html += f"<div class='info-row'>• {n}</div>"
-
-extra_html = ""
+extra = ""
 if carrier:
-    extra_html += f"<div class='info-row'>📡 Operator: {carrier}</div>"
+    extra += "<div class='info'>Operator: " + carrier + "</div>"
 if spam_score:
-    color = "#ff6b6b" if spam_score > 3 else "#ffd43b"
-    extra_html += f"<div class='info-row'>⚠️ Spam Score: <span style='color:{color};font-weight:600'>{spam_score}</span></div>"
-if internet_addresses:
-    extra_html += f"<div class='info-row'>🌐 {', '.join(internet_addresses[:3])}</div>"
+    color = "#ff6b6b" if float(spam_score) > 3 else "#ffd43b"
+    extra += ("<div class='info'>Spam Score: <span style='color:" + color
+              + ";font-weight:700'>" + str(spam_score) + "</span></div>")
+if inet:
+    extra += "<div class='info'>Web: " + ", ".join(inet[:3]) + "</div>"
 
-st.markdown(f"""
-<div class="result-card {card_class}">
-    <span class="source-badge {badge_class}">{icon} {source}</span>
-    <div class="name-main">{name}</div>
-    {extra_html}
-    {"<div class='section-header'>Tags</div>" + tags_html if tags_html else "<div class='info-row'>Tidak ada tag</div>"}
-    {names_html}
-</div>
-""", unsafe_allow_html=True)
+alt_html = ""
+others = [n for n in all_names if n and n != name]
+if others:
+    alt_html = "<div class='section'>Nama lain</div>"
+    for n in others:
+        alt_html += "<div class='info'>- " + n + "</div>"
+
+tags_sec = (("<div class='section'>Tags</div>" + tags_html)
+            if tags_html else "<div class='info'>Tidak ada tag</div>")
+
+st.markdown(
+    "<div class='" + card_cls + "'>"
+    + "<span class='" + badge_cls + "'>" + label + " " + src + "</span>"
+    + "<div class='name'>" + name + "</div>"
+    + extra + tags_sec + alt_html
+    + "</div>",
+    unsafe_allow_html=True,
+)
 ```
 
-# ─── Sidebar: Auth tokens ───────────────────────────────────────────────────────
+# ———————————————————————–
+
+# Sidebar
+
+# ———————————————————————–
 
 with st.sidebar:
-st.markdown(”### ⚙️ Konfigurasi Auth”)
+st.markdown(”### Konfigurasi Token”)
 st.markdown(”—”)
 
 ```
 st.markdown("**TrueCaller Token**")
-st.markdown(
-    "<small>Dapat dari login via: <code>python -m truecallerpy</code> atau lihat README di bawah</small>",
-    unsafe_allow_html=True
-)
 tc_token = st.text_input(
-    "TrueCaller Auth Token",
+    "tc_token",
     type="password",
-    placeholder="eyJhbGciOiJSUzI1NiJ9...",
-    key="tc_token",
-    label_visibility="collapsed"
+    placeholder="installationId dari truecaller.json",
+    label_visibility="collapsed",
 )
 
 st.markdown("**GetContact Token**")
-st.markdown(
-    "<small>Dapat dari intercept request app GetContact (lihat README)</small>",
-    unsafe_allow_html=True
-)
 gc_token = st.text_input(
-    "GetContact Auth Token",
+    "gc_token",
     type="password",
-    placeholder="Bearer eyJ...",
-    key="gc_token",
-    label_visibility="collapsed"
+    placeholder="eyJ... (tanpa kata Bearer)",
+    label_visibility="collapsed",
 )
 
 st.markdown("---")
-st.markdown("**Default Country**")
-country_default = st.selectbox(
-    "Default Country",
-    options=["ID", "US", "MY", "SG", "AU"],
-    index=0,
-    label_visibility="collapsed"
-)
+cc_default = st.selectbox("Default Country", ["ID", "MY", "SG", "US", "AU"], index=0)
 
 st.markdown("---")
-with st.expander("📖 Cara dapat token"):
-    st.markdown("""
+with st.expander("Cara dapat token TrueCaller"):
+    st.code(
+        "pip install truecallerpy\n"
+        "python -m truecallerpy\n"
+        "# Ikuti prompt: masukkan no HP, OTP\n"
+        "# Token tersimpan di:\n"
+        "# ~/.truecallerpy/truecaller.json\n"
+        "# Salin nilai 'installationId'",
+        language="bash",
+    )
+
+with st.expander("Cara dapat token GetContact"):
+    st.markdown(
+        "1. Install **HTTP Toolkit** (gratis) di PC\n"
+        "2. Intercept HTTPS dari HP Android\n"
+        "3. Buka app GetContact, cari nomor apapun\n"
+        "4. Cari request ke `pbssrv-centralevents.com`\n"
+        "5. Salin nilai header `Authorization` (tanpa kata Bearer)\n\n"
+        "Token biasanya valid 30-90 hari."
+    )
+
+with st.expander("Disclaimer"):
+    st.markdown(
+        "- Menggunakan unofficial/reverse-engineered API\n"
+        "- Bisa melanggar ToS GetContact & TrueCaller\n"
+        "- Gunakan hanya untuk keperluan pribadi\n"
+        "- Jangan gunakan untuk scraping massal"
+    )
+
+st.markdown("---")
+st.markdown("**Status Library**")
+st.write("truecallerpy:", "OK" if TRUECALLER_LIB else "Belum install")
+st.write("phonenumbers:", "OK" if PHONENUMBERS_LIB else "Belum install")
+st.write("GetContact:", "Built-in via HTTP")
+
+if not TRUECALLER_LIB or not PHONENUMBERS_LIB:
+    st.code("pip install truecallerpy phonenumbers", language="bash")
 ```
 
-**TrueCaller:**
+# ———————————————————————–
 
-```bash
-pip install truecallerpy
-python -m truecallerpy
-```
+# Main UI
 
-Ikuti prompt → masukkan no HP → OTP → token tersimpan di `~/.truecallerpy/truecaller.json`
-Salin nilai `installationId` atau `token` dari file tersebut.
+# ———————————————————————–
 
------
+st.title(“Phone Lookup”)
+st.caption(“TrueCaller + GetContact - gabungan dalam satu pencarian”)
 
-**GetContact:**
-
-1. Install mitmproxy / HTTP Toolkit
-1. Buka app GetContact di HP
-1. Intercept request ke `api.getcontact.com`
-1. Salin header `Authorization: Bearer ...`
-
-Token biasanya valid 30–90 hari.
-“””)
-
-```
-with st.expander("⚠️ Disclaimer"):
-    st.markdown("""
-```
-
-- Tools ini menggunakan **unofficial API** (reverse-engineered)
-- Penggunaan dapat **melanggar ToS** GetContact & TrueCaller
-- Akun dapat **di-suspend** sewaktu-waktu
-- Gunakan hanya untuk keperluan **pribadi/internal**
-- Jangan gunakan untuk scraping massal
-  “””)
-  
-  # Library status
-  
-  st.markdown(”—”)
-  st.markdown(”**Status Library**”)
-  col1, col2 = st.columns(2)
-  with col1:
-  st.markdown(“TrueCaller”)
-  st.markdown(“GetContact”)
-  with col2:
-  st.markdown(“✅” if TRUECALLER_OK else “❌ Not installed”)
-  st.markdown(“✅” if GETCONTACT_OK else “❌ Not installed”)
-  
-  if not TRUECALLER_OK or not GETCONTACT_OK:
-  st.markdown(”””
-
-```bash
-pip install truecallerpy getcontact phonenumbers
-```
-
-```
-    """)
-```
-
-# ─── Main UI ───────────────────────────────────────────────────────────────────
-
-st.markdown(’<p class="main-title">🔍 Phone Lookup</p>’, unsafe_allow_html=True)
-st.markdown(’<p class="subtitle">TrueCaller + GetContact — gabungan dalam satu pencarian</p>’, unsafe_allow_html=True)
-
-# Input nomor
-
-col_input, col_btn = st.columns([3, 1])
-with col_input:
+col1, col2 = st.columns([3, 1])
+with col1:
 phone_input = st.text_input(
 “Nomor Telepon”,
 placeholder=“08123456789 atau +6281234567890”,
-key=“phone_input”,
-label_visibility=“collapsed”
+label_visibility=“collapsed”,
 )
-with col_btn:
-search_btn = st.button(“🔍 Cari”, use_container_width=True, type=“primary”)
+with col2:
+search_btn = st.button(“Cari”, use_container_width=True, type=“primary”)
 
-# Batch search
-
-with st.expander(“📋 Cari banyak nomor sekaligus (batch)”):
+with st.expander(“Cari banyak nomor sekaligus (batch)”):
 batch_input = st.text_area(
-“Nomor (satu per baris)”,
+“batch”,
 placeholder=“08111111111\n08222222222\n+6281333333333”,
 height=120,
-label_visibility=“collapsed”
+label_visibility=“collapsed”,
 )
-batch_btn = st.button(“🔍 Cari Semua”, key=“batch_btn”)
+batch_btn = st.button(“Cari Semua”, key=“batch_btn”)
 
-# ─── Search logic ──────────────────────────────────────────────────────────────
+# ———————————————————————–
 
-def do_search(phone_raw: str):
-“”“Eksekusi pencarian untuk satu nomor.”””
-phone_info = normalize_phone(phone_raw, country_default)
+# Search logic
+
+# ———————————————————————–
+
+def do_search(raw):
+info = normalize(raw, cc_default)
+e164 = info[“e164”]
 
 ```
-if not phone_info.get("is_valid", False) and "error" in phone_info:
-    st.warning(f"⚠️ Format nomor mungkin tidak valid: {phone_info.get('error', '')}")
+c1, c2, c3 = st.columns(3)
+c1.metric("E.164", e164)
+c2.metric("Negara", info["cc"])
+c3.metric("Operator", info["operator"])
+st.markdown("---")
 
-e164 = phone_info["e164"]
-national = phone_info["national"]
-operator = phone_info.get("operator", "")
-country_code = phone_info.get("country_code", "")
-
-# Info nomor
-cols = st.columns(3)
-cols[0].metric("Format E.164", e164)
-cols[1].metric("Negara", country_code)
-cols[2].metric("Operator", operator or "—")
-
-st.markdown("<hr class='divider'>", unsafe_allow_html=True)
-
-# Cek token
-sources_to_search = []
-if tc_token:
-    sources_to_search.append("truecaller")
-if gc_token:
-    sources_to_search.append("getcontact")
-
-if not sources_to_search:
-    st.markdown("""
-    <div class="warn-box">
-    ⚠️ <b>Belum ada token yang diisi.</b><br>
-    Isi TrueCaller Token dan/atau GetContact Token di sidebar kiri untuk mulai pencarian.
-    </div>
-    """, unsafe_allow_html=True)
+if not tc_token and not gc_token:
+    st.markdown(
+        "<div class='warn'>Belum ada token. Isi TrueCaller Token dan/atau "
+        "GetContact Token di sidebar kiri.</div>",
+        unsafe_allow_html=True,
+    )
     return
 
-# Jalankan pencarian paralel
-with st.spinner("🔄 Mencari..."):
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
+results = {}
 
-    tasks = {}
-    if "truecaller" in sources_to_search:
-        tasks["truecaller"] = loop.run_until_complete(lookup_truecaller(e164, tc_token))
-    if "getcontact" in sources_to_search:
-        tasks["getcontact"] = loop.run_until_complete(lookup_getcontact(e164, gc_token))
+with st.spinner("Mencari..."):
+    if tc_token:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        results["tc"] = loop.run_until_complete(tc_lookup(e164, tc_token))
+        loop.close()
 
-    loop.close()
+    if gc_token:
+        results["gc"] = gc_lookup(e164, gc_token)
 
-# Render hasil
-if "truecaller" in tasks:
-    render_result_card(tasks["truecaller"])
+if "tc" in results:
+    render_card(results["tc"])
+if "gc" in results:
+    render_card(results["gc"])
 
-if "getcontact" in tasks:
-    render_result_card(tasks["getcontact"])
-
-# Summary
-names_found = set()
-if "truecaller" in tasks and "name" in tasks["truecaller"]:
-    n = tasks["truecaller"].get("name", "")
-    if n:
-        names_found.add(n)
-if "getcontact" in tasks and "name" in tasks["getcontact"]:
-    n = tasks["getcontact"].get("name", "")
-    if n:
-        names_found.add(n)
-if "getcontact" in tasks and "all_names" in tasks["getcontact"]:
-    for n in tasks["getcontact"]["all_names"]:
+# Summary nama
+all_names = set()
+for k in ("tc", "gc"):
+    if k in results and "error" not in results[k]:
+        n = results[k].get("name", "")
         if n:
-            names_found.add(n)
+            all_names.add(n)
+        for an in results[k].get("all_names", []):
+            if an:
+                all_names.add(an)
 
-if names_found:
-    st.success(f"✅ Ditemukan: **{' / '.join(names_found)}**")
+if all_names:
+    st.success("Ditemukan: " + " / ".join(sorted(all_names)))
 
-# Export JSON
-with st.expander("📄 Raw JSON"):
-    st.json(tasks)
+with st.expander("Raw JSON"):
+    st.json(results)
 ```
 
-# ─── Trigger search ────────────────────────────────────────────────────────────
-
-if search_btn and phone_input:
+if search_btn:
+if phone_input:
 do_search(phone_input)
-elif search_btn and not phone_input:
+else:
 st.warning(“Masukkan nomor telepon terlebih dahulu.”)
 
-if batch_btn and batch_input:
-lines = [l.strip() for l in batch_input.strip().split(”\n”) if l.strip()]
+if batch_btn:
+lines = [ln.strip() for ln in (batch_input or “”).split(”\n”) if ln.strip()]
 if not lines:
-st.warning(“Tidak ada nomor yang dimasukkan.”)
+st.warning(“Masukkan nomor di kotak batch.”)
 else:
-st.markdown(f”### Hasil Batch ({len(lines)} nomor)”)
-progress = st.progress(0)
+prog = st.progress(0)
 for i, line in enumerate(lines):
-st.markdown(f”#### {i+1}. `{line}`”)
+st.markdown(”#### “ + str(i + 1) + “. `" + line + "`”)
 do_search(line)
-st.markdown(”<hr class='divider'>”, unsafe_allow_html=True)
-progress.progress((i + 1) / len(lines))
-progress.empty()
-st.success(f”✅ Selesai mencari {len(lines)} nomor.”)
-
-elif batch_btn and not batch_input:
-st.warning(“Masukkan nomor di kotak batch terlebih dahulu.”)
-
-# ─── Footer ────────────────────────────────────────────────────────────────────
-
 st.markdown(”—”)
-st.markdown(
-“<center><small>⚠️ Hanya untuk penggunaan pribadi/internal. “
-“Hormati privasi orang lain.</small></center>”,
-unsafe_allow_html=True
-)
+prog.progress((i + 1) / len(lines))
+prog.empty()
+st.success(“Selesai: “ + str(len(lines)) + “ nomor.”)
