@@ -1,9 +1,3 @@
-# -*- coding: utf-8 -*-
-
-# Phone Number Lookup - TrueCaller + GetContact
-
-# Streamlit app - all characters are ASCII-safe
-
 import streamlit as st
 import asyncio
 import hashlib
