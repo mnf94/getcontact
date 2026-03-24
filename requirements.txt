@@ -4,3 +4,7 @@ PyYAML>=5.4
 requests
 pycryptodome==3.9.6
 numpy>=1.26.0
+streamlit>=1.32.0
+truecallerpy>=1.0.0
+getcontact>=0.1.0
+phonenumbers>=8.13.0
