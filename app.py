@@ -1,5 +1,7 @@
+# -*- coding: utf-8 -*-
+
 # “””
-Phone Number Lookup — TrueCaller + GetContact
+Phone Number Lookup - TrueCaller + GetContact
 
 Gabungan pencarian nama & tag dari TrueCaller dan GetContact
 menggunakan library unofficial (reverse-engineered mobile API).
