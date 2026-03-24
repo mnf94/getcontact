@@ -38,13 +38,13 @@ PHONENUMBERS_LIB = False
 # ———————————————————————–
 
 st.set_page_config(
-page_title=“Phone Lookup”,
-page_icon=”:mag:”,
-layout=“centered”,
-initial_sidebar_state=“expanded”,
+page_title="Phone Lookup",
+page_icon=":mag:",
+layout="centered",
+initial_sidebar_state="expanded",
 )
 
-st.markdown(”””
+st.markdown("""
 
 <style>
 .card {
@@ -86,7 +86,7 @@ st.markdown(”””
         font-size:0.82rem; color:#ffb347; }
 </style>
 
-“””, unsafe_allow_html=True)
+""", unsafe_allow_html=True)
 
 # ———————————————————————–
 
@@ -94,8 +94,8 @@ st.markdown(”””
 
 # ———————————————————————–
 
-def normalize(raw, default_cc=“ID”):
-raw = re.sub(r”[\s-().+]”, “”, raw)
+def normalize(raw, default_cc="ID"):
+raw = re.sub(r"[\s-().+]", "", raw)
 
 ```
 if PHONENUMBERS_LIB:
@@ -132,13 +132,13 @@ return {"e164": e164, "national": raw, "cc": default_cc, "operator": "-", "valid
 
 async def tc_lookup(phone_e164, token):
 if not TRUECALLER_LIB:
-return {“error”: “truecallerpy belum terinstall. Jalankan: pip install truecallerpy”,
-“source”: “TrueCaller”}
+return {"error": "truecallerpy belum terinstall. Jalankan: pip install truecallerpy",
+"source": "TrueCaller"}
 try:
-clean = phone_e164.lstrip(”+”)
-result = await search_phonenumber(clean, “ID”, token)
-if not result or “data” not in result:
-return {“error”: “Tidak ada hasil dari TrueCaller”, “source”: “TrueCaller”}
+clean = phone_e164.lstrip("+")
+result = await search_phonenumber(clean, "ID", token)
+if not result or "data" not in result:
+return {"error": "Tidak ada hasil dari TrueCaller", "source": "TrueCaller"}
 
 ```
     data = result["data"]
@@ -179,8 +179,8 @@ except Exception as e:
 
 # ———————————————————————–
 
-GC_API_URL = “https://pbssrv-centralevents.com/v2.4/details”
-GC_HMAC_SECRET = “getcontact2018”
+GC_API_URL = "https://pbssrv-centralevents.com/v2.4/details"
+GC_HMAC_SECRET = "getcontact2018"
 
 def gc_sign(payload_str):
 ts = str(int(time.time()))
@@ -189,8 +189,8 @@ sig = hmac.new(GC_HMAC_SECRET.encode(), msg.encode(), hashlib.sha256).hexdigest(
 return ts, sig
 
 def gc_lookup(phone_e164, token):
-phone_clean = phone_e164.lstrip(”+”)
-body = json.dumps({“phoneNumber”: phone_clean}, separators=(”,”, “:”))
+phone_clean = phone_e164.lstrip("+")
+body = json.dumps({"phoneNumber": phone_clean}, separators=(",", ":"))
 ts, sig = gc_sign(body)
 
 ```
@@ -262,9 +262,9 @@ except Exception as e:
 # ———————————————————————–
 
 def render_card(res):
-if “error” in res:
-src = res.get(“source”, “Error”)
-st.error(”[” + src + “] “ + res[“error”])
+if "error" in res:
+src = res.get("source", "Error")
+st.error("[" + src + "] " + res["error"])
 return
 
 ```
@@ -323,8 +323,8 @@ st.markdown(
 # ———————————————————————–
 
 with st.sidebar:
-st.markdown(”### Konfigurasi Token”)
-st.markdown(”—”)
+st.markdown("### Konfigurasi Token")
+st.markdown("—")
 
 ```
 st.markdown("**TrueCaller Token**")
@@ -392,27 +392,27 @@ if not TRUECALLER_LIB or not PHONENUMBERS_LIB:
 
 # ———————————————————————–
 
-st.title(“Phone Lookup”)
-st.caption(“TrueCaller + GetContact - gabungan dalam satu pencarian”)
+st.title("Phone Lookup")
+st.caption("TrueCaller + GetContact - gabungan dalam satu pencarian")
 
 col1, col2 = st.columns([3, 1])
 with col1:
 phone_input = st.text_input(
-“Nomor Telepon”,
-placeholder=“08123456789 atau +6281234567890”,
-label_visibility=“collapsed”,
+"Nomor Telepon",
+placeholder="08123456789 atau +6281234567890",
+label_visibility="collapsed",
 )
 with col2:
-search_btn = st.button(“Cari”, use_container_width=True, type=“primary”)
+search_btn = st.button("Cari", use_container_width=True, type="primary")
 
-with st.expander(“Cari banyak nomor sekaligus (batch)”):
+with st.expander("Cari banyak nomor sekaligus (batch)"):
 batch_input = st.text_area(
-“batch”,
-placeholder=“08111111111\n08222222222\n+6281333333333”,
+"batch",
+placeholder="08111111111\n08222222222\n+6281333333333",
 height=120,
-label_visibility=“collapsed”,
+label_visibility="collapsed",
 )
-batch_btn = st.button(“Cari Semua”, key=“batch_btn”)
+batch_btn = st.button("Cari Semua", key="batch_btn")
 
 # ———————————————————————–
 
@@ -422,7 +422,7 @@ batch_btn = st.button(“Cari Semua”, key=“batch_btn”)
 
 def do_search(raw):
 info = normalize(raw, cc_default)
-e164 = info[“e164”]
+e164 = info["e164"]
 
 ```
 c1, c2, c3 = st.columns(3)
@@ -478,18 +478,18 @@ if search_btn:
 if phone_input:
 do_search(phone_input)
 else:
-st.warning(“Masukkan nomor telepon terlebih dahulu.”)
+st.warning("Masukkan nomor telepon terlebih dahulu.")
 
 if batch_btn:
-lines = [ln.strip() for ln in (batch_input or “”).split(”\n”) if ln.strip()]
+lines = [ln.strip() for ln in (batch_input or "").split("\n") if ln.strip()]
 if not lines:
-st.warning(“Masukkan nomor di kotak batch.”)
+st.warning("Masukkan nomor di kotak batch.")
 else:
 prog = st.progress(0)
 for i, line in enumerate(lines):
-st.markdown(”#### “ + str(i + 1) + “. `" + line + "`”)
+st.markdown("#### " + str(i + 1) + ". `" + line + "`")
 do_search(line)
-st.markdown(”—”)
+st.markdown("—")
 prog.progress((i + 1) / len(lines))
 prog.empty()
-st.success(“Selesai: “ + str(len(lines)) + “ nomor.”)
+st.success("Selesai: " + str(len(lines)) + " nomor.")
